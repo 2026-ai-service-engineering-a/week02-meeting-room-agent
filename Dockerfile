@@ -4,7 +4,9 @@ FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH"
+# PATH 등록으로 `docker compose exec app pytest` 처럼 venv 도구를 바로 부를 수 있습니다
 
 WORKDIR /app
 
