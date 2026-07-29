@@ -1,0 +1,15 @@
+# 환경변수 — 실제 키는 절대 커밋하지 않습니다 (.env.example만 커밋)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
