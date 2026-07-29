@@ -22,6 +22,16 @@ def client() -> TestClient:
     return TestClient(app)
 
 
+@pytest.fixture(scope="session")
+def admin_headers(client) -> dict:
+    """시드 관리자(admin@example.com / demo1234)의 인증 헤더."""
+    login = client.post(
+        "/login", json={"email": "admin@example.com", "password": "demo1234"}
+    )
+    assert login.status_code == 200, login.text
+    return {"Authorization": f"Bearer {login.json()['token']}"}
+
+
 @pytest.fixture
 def new_user(client):
     """고유 이메일의 member를 가입·로그인시켜 인증 헤더와 함께 돌려주는 팩토리."""
