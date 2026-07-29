@@ -5,8 +5,10 @@
 
 from dataclasses import asdict
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.auth.deps import CurrentUser, get_current_user
@@ -14,6 +16,8 @@ from app.auth.service import AuthError, login, signup
 from app.services import reservations as reservation_service
 from app.services import rooms as room_service
 from app.services.reservations import ReservationError
+
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 app = FastAPI(title="회의실 예약 에이전트", version="0.1.0")
 
@@ -145,3 +149,7 @@ def post_reserve() -> dict:
 
 
 app.include_router(api)
+
+# 웹 예약 화면 — API 라우트보다 뒤에 마운트해야 라우트가 가려지지 않습니다.
+# 정적 파일 자체는 공개지만, 화면이 부르는 API는 전부 토큰이 필요합니다.
+app.mount("/", StaticFiles(directory=BASE_DIR / "web", html=True), name="web")
