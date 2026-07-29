@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>회의실 예약</title>
+<style>
+  :root { --ink: #1c2333; --sub: #667085; --line: #e4e7ec; --brand: #2953e8; --bad: #d92d20; --ok: #067647; --bg: #f4f6fb; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  .who { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--sub); }
+  .badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #eef2ff; color: var(--brand); }
+  .badge.admin { background: #fef3f2; color: var(--bad); }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+  label { display: block; font-size: 12px; color: var(--sub); margin: 10px 0 4px; }
+  input, select { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; font-family: inherit; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 130px; }
+  button { padding: 9px 16px; border: 0; border-radius: 8px; background: var(--brand); color: #fff; font-size: 14px; cursor: pointer; font-family: inherit; }
+  button.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+  button.danger { background: #fff; color: var(--bad); border: 1px solid #fecdca; }
+  button:hover { filter: brightness(0.96); }
+  .tabs { display: flex; gap: 8px; margin-bottom: 8px; }
+  .tabs button { background: #fff; color: var(--sub); border: 1px solid var(--line); }
+  .tabs button.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .checks { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; }
+  .checks label { display: flex; align-items: center; gap: 5px; margin: 0; color: var(--ink); }
+  .checks input { width: auto; }
+  .rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-top: 12px; }
+  .room { border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .room.on { border-color: var(--brand); box-shadow: 0 0 0 2px #dbe3ff; }
+  .room b { font-size: 15px; }
+  .tags { margin: 6px 0 10px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .tag { font-size: 11px; background: var(--bg); border-radius: 6px; padding: 2px 6px; color: var(--sub); }
+  .msg { margin-top: 10px; font-size: 13px; padding: 10px 12px; border-radius: 8px; display: none; white-space: pre-wrap; }
+  .msg.ok { display: block; background: #ecfdf3; color: var(--ok); }
+  .msg.bad { display: block; background: #fef3f2; color: var(--bad); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+  th { color: var(--sub); font-weight: 500; font-size: 12px; }
+  .slot { display: inline-block; margin: 2px 4px 2px 0; padding: 3px 8px; border-radius: 6px; font-size: 12px; }
+  .slot.busy { background: #fef3f2; color: var(--bad); }
+  .slot.free { background: #ecfdf3; color: var(--ok); }
+  .hint { font-size: 12px; color: var(--sub); margin-top: 8px; }
+  #app { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🏢 회의실 예약</h1>
+    <div class="who" id="who"></div>
+  </header>
+
+  <!-- 로그인/회원가입 -->
+  <section class="card" id="auth">
+    <div class="tabs">
+      <button id="tab-login" class="on" onclick="showTab('login')">로그인</button>
+      <button id="tab-signup" onclick="showTab('signup')">회원가입</button>
+    </div>
+    <form id="form-login" onsubmit="return doLogin(event)">
+      <div class="row">
+        <div><label>이메일</label><input id="login-email" type="email" required value="hana@example.com"></div>
+        <div><label>비밀번호</label><input id="login-password" type="password" required value="demo1234"></div>
+      </div>
+      <label></label><button>로그인</button>
+      <p class="hint">시드 계정 비밀번호는 전부 <code>demo1234</code> —
+        member: hana@ / duri@ / semi@example.com · admin: admin@example.com</p>
+    </form>
+    <form id="form-signup" style="display:none" onsubmit="return doSignup(event)">
+      <div class="row">
+        <div><label>이름</label><input id="su-name" required></div>
+        <div><label>이메일</label><input id="su-email" type="email" required></div>
+      </div>
+      <div class="row">
+        <div><label>비밀번호</label><input id="su-password" type="password" required minlength="8"></div>
+        <div><label>팀</label>
+          <select id="su-team"><option value="1">플랫폼팀</option><option value="2">그로스팀</option></select>
+        </div>
+      </div>
+      <label></label><button>가입하기 (member)</button>
+      <p class="hint">가입은 항상 member 역할입니다 — 관리자는 시드에서만 지정됩니다.</p>
+    </form>
+    <div class="msg" id="auth-msg"></div>
+  </section>
+
+  <!-- 로그인 후 화면 -->
+  <div id="app">
+    <section class="card">
+      <h2>🔍 회의실 검색</h2>
+      <form onsubmit="return searchRooms(event)">
+        <div class="row">
+          <div><label>최소 인원</label><input id="q-capacity" type="number" min="1" placeholder="예: 6"></div>
+        </div>
+        <label>필요 설비</label>
+        <div class="checks" id="q-equipment">
+          <label><input type="checkbox" value="화면공유">화면공유</label>
+          <label><input type="checkbox" value="화상회의">화상회의</label>
+          <label><input type="checkbox" value="화이트보드">화이트보드</label>
+          <label><input type="checkbox" value="프로젝터">프로젝터</label>
+          <label><input type="checkbox" value="마이크">마이크</label>
+          <label><input type="checkbox" value="모니터">모니터</label>
+        </div>
+        <label></label><button>검색</button>
+      </form>
+      <div class="rooms" id="rooms"></div>
+    </section>
+
+    <section class="card" id="reserve-card" style="display:none">
+      <h2>📅 예약 — <span id="reserve-room-name"></span></h2>
+      <form onsubmit="return createReservation(event)">
+        <div class="row">
+          <div><label>날짜</label><input id="r-date" type="date" required></div>
+          <div><label>시작</label><input id="r-start" type="time" required value="10:00" step="600"></div>
+          <div><label>종료</label><input id="r-end" type="time" required value="11:00" step="600"></div>
+        </div>
+        <div class="row">
+          <div><label>목적</label><input id="r-purpose" placeholder="예: 팀 회의"></div>
+          <div><label>인원</label><input id="r-attendees" type="number" min="1" placeholder="예: 4"></div>
+        </div>
+        <label></label>
+        <div class="row">
+          <button>예약하기</button>
+          <button type="button" class="ghost" onclick="checkAvailability()">이 날짜 가용 보기</button>
+        </div>
+      </form>
+      <div id="availability" style="margin-top:10px"></div>
+      <div class="msg" id="reserve-msg"></div>
+    </section>
+
+    <section class="card">
+      <h2 id="list-title">🧾 내 예약</h2>
+      <table id="reservations"></table>
+      <div class="msg" id="list-msg"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let me = null;
+let selectedRoom = null;
+
+// ── API 헬퍼 — 모든 요청에 Bearer 토큰을 실어 보냅니다 ──────────────
+async function api(path, options = {}) {
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  const token = localStorage.getItem("token");
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const resp = await fetch(path, { ...options, headers });
+  const body = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(body.detail || `요청 실패 (${resp.status})`);
+  return body;
+}
+
+function showMsg(id, text, ok) {
+  const el = $(id);
+  el.textContent = text;
+  el.className = `msg ${ok ? "ok" : "bad"}`;
+}
+
+function showTab(name) {
+  $("form-login").style.display = name === "login" ? "" : "none";
+  $("form-signup").style.display = name === "signup" ? "" : "none";
+  $("tab-login").classList.toggle("on", name === "login");
+  $("tab-signup").classList.toggle("on", name === "signup");
+}
+
+// ── 인증 ────────────────────────────────────────────────────────────
+async function doSignup(event) {
+  event.preventDefault();
+  try {
+    await api("/signup", { method: "POST", body: JSON.stringify({
+      name: $("su-name").value, email: $("su-email").value,
+      password: $("su-password").value, team_id: Number($("su-team").value),
+    })});
+    showMsg("auth-msg", "가입 완료! 로그인해 주세요.", true);
+    $("login-email").value = $("su-email").value;
+    $("login-password").value = "";
+    showTab("login");
+  } catch (err) { showMsg("auth-msg", err.message, false); }
+  return false;
+}
+
+async function doLogin(event) {
+  event.preventDefault();
+  try {
+    const { token } = await api("/login", { method: "POST", body: JSON.stringify({
+      email: $("login-email").value, password: $("login-password").value,
+    })});
+    localStorage.setItem("token", token);
+    await enter();
+  } catch (err) { showMsg("auth-msg", err.message, false); }
+  return false;
+}
+
+function logout() {
+  localStorage.removeItem("token");
+  location.reload();
+}
+
+async function enter() {
+  me = await api("/me");
+  $("auth").style.display = "none";
+  $("app").style.display = "block";
+  const roleBadge = me.role === "admin"
+    ? '<span class="badge admin">admin</span>' : '<span class="badge">member</span>';
+  $("who").innerHTML = `${me.name} ${roleBadge}
+    <button class="ghost" style="padding:4px 10px" onclick="logout()">로그아웃</button>`;
+  $("list-title").textContent = me.role === "admin" ? "🧾 전체 예약 (관리자)" : "🧾 내 예약";
+  const tomorrow = new Date(Date.now() + 86400000);
+  $("r-date").value = tomorrow.toISOString().slice(0, 10);
+  await searchRooms();
+  await loadReservations();
+}
+
+// ── 회의실 검색·선택 ────────────────────────────────────────────────
+async function searchRooms(event) {
+  if (event) event.preventDefault();
+  const params = new URLSearchParams();
+  if ($("q-capacity").value) params.set("capacity", $("q-capacity").value);
+  const equipment = [...document.querySelectorAll("#q-equipment input:checked")].map((el) => el.value);
+  if (equipment.length) params.set("equipment", equipment.join(","));
+  const rooms = await api(`/rooms?${params}`);
+  $("rooms").innerHTML = rooms.length ? "" : "<p class='hint'>조건에 맞는 방이 없습니다.</p>";
+  for (const room of rooms) {
+    const div = document.createElement("div");
+    div.className = "room" + (selectedRoom?.id === room.id ? " on" : "");
+    div.innerHTML = `<b>${room.name}</b> <span class="hint">${room.capacity}명</span>
+      <div class="tags">${room.equipment.map((e) => `<span class="tag">${e}</span>`).join("") || '<span class="tag">설비 없음</span>'}</div>
+      <button class="ghost" style="width:100%">이 방 예약</button>`;
+    div.querySelector("button").onclick = () => selectRoom(room);
+    $("rooms").appendChild(div);
+  }
+  return false;
+}
+
+function selectRoom(room) {
+  selectedRoom = room;
+  $("reserve-card").style.display = "";
+  $("reserve-room-name").textContent = `${room.name} (${room.capacity}명)`;
+  $("availability").innerHTML = "";
+  $("reserve-msg").className = "msg";
+  document.querySelectorAll(".room").forEach((el) => el.classList.remove("on"));
+  [...document.querySelectorAll(".room")].find((el) => el.querySelector("b").textContent === room.name)?.classList.add("on");
+  $("reserve-card").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+// ── 가용 조회 ───────────────────────────────────────────────────────
+const fmtTime = (iso) => new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+async function checkAvailability() {
+  if (!selectedRoom) return;
+  const day = $("r-date").value;
+  try {
+    const body = await api(`/rooms/${selectedRoom.id}/availability?start=${day}T09:00:00&end=${day}T19:00:00`);
+    const busy = body.busy.map((b) =>
+      `<span class="slot busy">${fmtTime(b.starts_at)}~${fmtTime(b.ends_at)} ${b.reserved_by}${b.purpose ? " · " + b.purpose : ""}</span>`).join("");
+    const free = body.free.map((f) =>
+      `<span class="slot free">${fmtTime(f.starts_at)}~${fmtTime(f.ends_at)} 비어 있음</span>`).join("");
+    $("availability").innerHTML = `<div>${busy || '<span class="hint">예약 없음 (09~19시)</span>'}</div><div style="margin-top:4px">${free}</div>`;
+  } catch (err) { showMsg("reserve-msg", err.message, false); }
+}
+
+// ── 예약 생성·취소 ──────────────────────────────────────────────────
+async function createReservation(event) {
+  event.preventDefault();
+  const day = $("r-date").value;
+  try {
+    const created = await api("/reservations", { method: "POST", body: JSON.stringify({
+      room_id: selectedRoom.id,
+      starts_at: `${day}T${$("r-start").value}:00`,
+      ends_at: `${day}T${$("r-end").value}:00`,
+      purpose: $("r-purpose").value,
+      attendees: $("r-attendees").value ? Number($("r-attendees").value) : null,
+    })});
+    showMsg("reserve-msg", `예약 확정 — ${created.room_name} #${created.id}`, true);
+    await loadReservations();
+    await checkAvailability();
+  } catch (err) { showMsg("reserve-msg", err.message, false); }
+  return false;
+}
+
+async function loadReservations() {
+  const items = await api("/reservations");
+  const fmtDay = (iso) => new Date(iso).toLocaleDateString("ko-KR", { month: "short", day: "numeric", weekday: "short" });
+  const rows = items.map((r) => `<tr>
+      <td><b>${r.room_name}</b></td>
+      <td>${fmtDay(r.starts_at)} ${fmtTime(r.starts_at)}~${fmtTime(r.ends_at)}</td>
+      <td>${r.purpose || "-"}</td>
+      <td>${r.reserved_by}</td>
+      <td><button class="danger" onclick="cancelReservation(${r.id})">취소</button></td>
+    </tr>`).join("");
+  $("reservations").innerHTML = items.length
+    ? `<tr><th>회의실</th><th>시간</th><th>목적</th><th>예약자</th><th></th></tr>${rows}`
+    : "<tr><td class='hint'>예약이 없습니다.</td></tr>";
+}
+
+async function cancelReservation(id) {
+  try {
+    await api(`/reservations/${id}`, { method: "DELETE" });
+    showMsg("list-msg", `예약 #${id} 취소됨`, true);
+  } catch (err) { showMsg("list-msg", err.message, false); }
+  await loadReservations();
+}
+
+// 토큰이 남아 있으면 자동 로그인 시도
+if (localStorage.getItem("token")) enter().catch(() => localStorage.removeItem("token"));
+</script>
+</body>
+</html>
