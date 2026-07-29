@@ -1,0 +1,11 @@
+# 개발 오버라이드 — 별도 세계가 아니라 docker-compose.yml 위에 "덮어쓰기"입니다.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+services:
+  app:
+    volumes:
+      - .:/app # 소스 마운트 — 코드 변경이 재빌드 없이 즉시 반영
+    command: uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  db:
+    ports:
+      - "5432:5432" # 호스트의 psql·GUI 도구로 직접 접속하기 위한 개발용 노출
