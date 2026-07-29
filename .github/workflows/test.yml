@@ -1,0 +1,47 @@
+# PR 안전망 — PR을 올리면 pytest가 자동으로 돕니다.
+# 통합 테스트가 DB를 쓰므로 PostgreSQL 서비스 컨테이너를 함께 띄우고,
+# 로컬 개발과 똑같이 db/init.sql 로 스키마·시드를 적용합니다.
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: meeting
+          TZ: Asia/Seoul
+          PGTZ: Asia/Seoul
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d meeting"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/meeting
+      TZ: Asia/Seoul
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: 의존성 설치
+        run: uv sync --frozen
+
+      - name: DB 스키마·시드 적용 (로컬과 같은 init.sql)
+        run: psql "$DATABASE_URL" -f db/init.sql
+
+      - name: 테스트 실행
+        run: uv run pytest -q
