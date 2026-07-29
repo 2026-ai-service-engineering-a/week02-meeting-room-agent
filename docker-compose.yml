@@ -1,0 +1,39 @@
+# 공통 정의 — app + db. 실행 모드와 개발 모드가 이 한 파일을 공유합니다.
+#   실행 모드: docker compose up --build
+#   개발 모드: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+services:
+  app:
+    build: .
+    container_name: meeting-room-agent
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false # v0.1 예약 서비스는 LLM 키 없이도 동작합니다
+    environment:
+      TZ: Asia/Seoul
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/meeting
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
+    container_name: meeting-room-db
+    environment:
+      TZ: Asia/Seoul
+      PGTZ: Asia/Seoul
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: meeting
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # 첫 기동 시 스키마·시드 자동 적용 — DB 구조가 코드로 관리됩니다
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d meeting"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  db-data:
