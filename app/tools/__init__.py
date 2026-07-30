@@ -116,6 +116,18 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_reservations",
+            "description": (
+                "현재 사용자의 예약 내역을 조회한다 (관리자는 전체). 각 항목에 예약"
+                " id가 들어 있어, 사용자가 id 없이 설명한 예약을 취소할 때 먼저 여기서"
+                " 찾는 용도로도 쓴다."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
 ]
 
 
@@ -172,12 +184,18 @@ def _cancel_reservation(*, user, reservation_id: int):
         return {"error": str(exc), "code": type(exc).__name__}
 
 
+def _list_reservations(*, user):
+    # 조회 범위(본인 vs 전체)를 가르는 id·role도 인증 컨텍스트에서 온다 —
+    # member는 자기 예약만, admin은 전체. 모델이 남의 것을 보겠다고 정할 수 없다.
+    return reservation_service.list_reservations(user_id=user.id, role=user.role)
+
+
 def run_tool(name: str, arguments: dict, *, user) -> object:
     """도구를 실행한다.
 
-    읽기 도구(search_rooms·check_availability)는 모델 인자를 그대로 쓴다. 쓰기
-    도구(create_reservation·cancel_reservation)는 예약자·취소자를 모델이 아니라
-    인증 컨텍스트(user)에서 코드가 주입한다 — 위험한 도구일수록 모델의 재량이 줄어든다.
+    search_rooms·check_availability는 모델 인자를 그대로 쓴다. 나머지 셋은 사용자
+    소유·권한이 걸리므로, 예약자·취소자·조회 범위를 모델이 아니라 인증 컨텍스트(user)
+    에서 코드가 주입한다 — 위험하거나 사적인 도구일수록 모델의 재량이 줄어든다.
     """
     if name == "search_rooms":
         return _search_rooms(**arguments)
@@ -187,4 +205,6 @@ def run_tool(name: str, arguments: dict, *, user) -> object:
         return _create_reservation(user=user, **arguments)
     if name == "cancel_reservation":
         return _cancel_reservation(user=user, **arguments)
+    if name == "list_reservations":
+        return _list_reservations(user=user)
     return {"error": f"알 수 없는 도구: {name}"}

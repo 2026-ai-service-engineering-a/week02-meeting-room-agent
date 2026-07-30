@@ -35,3 +35,28 @@ def test_create_reservation_tool_rejects_overlap(new_user):
         if isinstance(created, dict) and "id" in created:
             with get_conn() as conn:
                 conn.execute("DELETE FROM reservations WHERE id = %s", (created["id"],))
+
+
+def test_list_reservations_tool_returns_own_with_id(new_user):
+    # 새 사용자는 예약이 없으니, 도구가 돌려주는 목록은 방금 만든 것 하나여야 한다.
+    user = CurrentUser(**new_user(team_id=1)["user"])
+    created = run_tool(
+        "create_reservation",
+        {
+            "room_id": 6,
+            "starts_at": "2030-05-01T10:00:00",
+            "ends_at": "2030-05-01T11:00:00",
+            "purpose": "조회 테스트",
+        },
+        user=user,
+    )
+    assert "id" in created, created
+    try:
+        listed = run_tool("list_reservations", {}, user=user)
+        # 방금 만든 예약이 id·목적과 함께 조회된다 — 자연어 취소 연쇄가 기대는 정보
+        mine = [row for row in listed if row["id"] == created["id"]]
+        assert len(mine) == 1, listed
+        assert mine[0]["purpose"] == "조회 테스트"
+    finally:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM reservations WHERE id = %s", (created["id"],))
