@@ -59,6 +59,18 @@
              background: var(--bg); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
   .confirm input { width: auto; }
   .confirm .msg { flex-basis: 100%; margin-top: 0; }
+
+  /* ── 자연어 채팅 패널 (POST /reserve → 에이전트) ───────────────── */
+  .chat-log { display: flex; flex-direction: column; gap: 8px; max-height: 340px;
+              overflow-y: auto; padding: 4px 2px; margin-bottom: 12px; }
+  .chat-log:empty { display: none; }
+  .bubble { max-width: 82%; padding: 9px 12px; border-radius: 12px; font-size: 14px;
+            line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+  .bubble.user { align-self: flex-end; background: var(--brand); color: #fff; border-bottom-right-radius: 4px; }
+  .bubble.bot { align-self: flex-start; background: var(--bg); color: var(--ink); border-bottom-left-radius: 4px; }
+  .bubble.pending { color: var(--sub); }
+  .chatbar { display: flex; gap: 10px; align-items: flex-end; }
+  .chatbar > input { flex: 1; }
 </style>
 </head>
 <body>
@@ -102,6 +114,19 @@
 
   <!-- 로그인 후 화면 -->
   <div id="app">
+    <!-- 자연어 채팅 — v1.0에서 얹은 에이전트 통로 (POST /reserve) -->
+    <section class="card" id="chat">
+      <h2>💬 자연어로 예약 <span class="hint">— 말하듯 요청하면 에이전트가 검색·예약·취소합니다</span></h2>
+      <div class="chat-log" id="chat-log"></div>
+      <form class="chatbar" onsubmit="return sendChat(event)">
+        <input id="chat-input" autocomplete="off"
+               placeholder="예: 내일 오후에 6명 화면공유 되는 방 예약해줘">
+        <button id="chat-send">보내기</button>
+      </form>
+      <p class="hint">같은 대화 안에서는 맥락이 이어집니다 (예: "그 방 내일은 비어?").
+        예약이 바뀌면 아래 타임라인도 갱신됩니다.</p>
+    </section>
+
     <section class="card">
       <div class="row">
         <div><label>날짜</label><input id="q-date" type="date" onchange="loadBoard()"></div>
@@ -140,6 +165,7 @@ const SLOTS = (CLOSE_HOUR - OPEN_HOUR) * 2;           // 30분 단위 칸 수
 let me = null;
 let board = [];          // [{room, cells: [{busy, who, purpose}]}]
 let sel = null;          // {ri, a, b} — 방 인덱스, 선택 구간(칸 인덱스, 양끝 포함)
+let conversationId = null;  // /reserve 대화 이어가기 — 서버가 매 응답에 실어 줍니다
 
 // ── API 헬퍼 — 모든 요청에 Bearer 토큰을 실어 보냅니다 ──────────────
 async function api(path, options = {}) {
@@ -212,6 +238,47 @@ async function enter() {
   $("q-date").value = tomorrow.toISOString().slice(0, 10);
   await loadBoard();
   await loadReservations();
+}
+
+// ── 자연어 채팅 (POST /reserve) ─────────────────────────────────────
+function addBubble(role, text) {
+  const log = $("chat-log");
+  const bubble = document.createElement("div");
+  bubble.className = `bubble ${role}`;
+  bubble.textContent = text;
+  log.appendChild(bubble);
+  log.scrollTop = log.scrollHeight;
+  return bubble;
+}
+
+async function sendChat(event) {
+  event.preventDefault();
+  const input = $("chat-input");
+  const message = input.value.trim();
+  if (!message) return false;
+  input.value = "";
+  addBubble("user", message);
+  const pending = addBubble("bot pending", "…");
+  $("chat-send").disabled = true;
+  try {
+    // conversation_id가 있으면 같은 대화를 이어갑니다 (서버는 무상태 — 이력은 DB에서)
+    const body = { message };
+    if (conversationId) body.conversation_id = conversationId;
+    const res = await api("/reserve", { method: "POST", body: JSON.stringify(body) });
+    conversationId = res.conversation_id;
+    pending.className = "bubble bot";
+    pending.textContent = res.reply;
+    // 에이전트가 예약을 만들거나 취소했을 수 있으니 타임라인·목록을 새로 읽습니다
+    await loadBoard();
+    await loadReservations();
+  } catch (err) {
+    pending.className = "bubble bot";
+    pending.textContent = `⚠️ ${err.message}`;
+  } finally {
+    $("chat-send").disabled = false;
+    input.focus();
+  }
+  return false;
 }
 
 // ── 타임라인 보드 ───────────────────────────────────────────────────
