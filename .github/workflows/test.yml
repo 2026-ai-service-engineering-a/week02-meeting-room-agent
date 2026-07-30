@@ -30,6 +30,7 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/meeting
+      REPORTING_DATABASE_URL: postgresql://reporter:reporter@localhost:5432/meeting
       TZ: Asia/Seoul
 
     steps:
