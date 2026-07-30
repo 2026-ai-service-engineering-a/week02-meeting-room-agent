@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from app.agent import ConversationError, run_agent
 from app.auth.deps import CurrentUser, get_current_user
 from app.auth.service import AuthError, login, signup
 from app.services import reservations as reservation_service
@@ -137,15 +138,27 @@ def delete_reservation(
     return {"cancelled": cancelled["id"]}
 
 
-# ── 자연어 통로 — v1.0에서 에이전트가 여기 연결됩니다 ───────────────────
+# ── 자연어 통로 — 에이전트가 검색·가용 도구로 답합니다 (1회전: 읽기 전용) ──
+
+
+class ReserveRequest(BaseModel):
+    message: str
+    conversation_id: int | None = None  # 없으면 새 대화, 있으면 이어가기 (소유자만)
 
 
 @api.post("/reserve")
-def post_reserve() -> dict:
-    raise HTTPException(
-        status_code=501,
-        detail="아직 구현되지 않았습니다 — 에이전트는 v1.0에서 옵니다",
-    )
+def post_reserve(
+    request: ReserveRequest, user: CurrentUser = Depends(get_current_user)
+) -> dict:
+    """자연어 한 문장 → 에이전트 응답 + conversation_id. 예약 생성은 다음 회전에서."""
+    try:
+        return run_agent(
+            user=user,
+            message=request.message,
+            conversation_id=request.conversation_id,
+        )
+    except ConversationError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc))
 
 
 app.include_router(api)
