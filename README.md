@@ -9,6 +9,7 @@ docker compose 개발환경과 Git Flow(지시 → 검증 → 커밋 → PR → 
   (`POST /reserve` → 501) 하나뿐입니다
 - **v1.0** — 시연 종료점. 기존 서비스 함수를 도구로 감싼 AI 에이전트가
   `/reserve`에 연결됩니다 (feature 브랜치 3회전으로 추가)
+- **v1.5** — 심화(선택). 관리자 전용 자연어 SQL 조회 도구 (`feature/sql-console`)
 
 시연에서 무엇이 만들어졌는지는 태그 간 diff 하나로 볼 수 있습니다.
 
@@ -54,6 +55,20 @@ week02-meeting-room-agent (v0.1)
 
 필요한 것은 **git과 Docker뿐**입니다. Python·uv·PostgreSQL은 전부 컨테이너
 안에 들어 있습니다.
+
+### 0. 저장소 받기 (v0.1로 시작)
+
+기본 브랜치 `main`은 **완성본(v1.5)** 입니다. 시연을 처음부터 따라 하려면
+그냥 클론하지 말고, 시작점인 **v0.1 태그**에서 작업 브랜치를 만들어 시작하세요.
+
+```bash
+git clone https://github.com/2026-ai-service-engineering-a/week02-meeting-room-agent.git
+cd week02-meeting-room-agent
+git switch -c week02 v0.1   # v0.1 태그에서 작업 브랜치 생성 (detached HEAD 방지)
+```
+
+완성본과 비교는 태그로 봅니다: `git checkout v1.0` · `git checkout v1.5` ·
+`git diff v0.1 v1.0`. (`--depth 1` 얕은 클론은 다른 태그·diff가 안 되니 전체 클론을 쓰세요.)
 
 ### 1. 환경변수 준비
 
