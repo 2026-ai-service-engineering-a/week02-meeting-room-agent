@@ -96,6 +96,26 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancel_reservation",
+            "description": (
+                "예약을 취소한다. 본인 예약이거나 관리자만 취소할 수 있고, 권한은"
+                " 시스템이 인증 컨텍스트로 검사한다 (취소자를 인자로 정할 수 없다)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reservation_id": {
+                        "type": "integer",
+                        "description": "취소할 예약 id",
+                    },
+                },
+                "required": ["reservation_id"],
+            },
+        },
+    },
 ]
 
 
@@ -138,12 +158,26 @@ def _create_reservation(
         return {"error": str(exc), "code": type(exc).__name__}
 
 
+def _cancel_reservation(*, user, reservation_id: int):
+    # 취소자 id·role은 모델 인자가 아니라 인증 컨텍스트에서 온다 — 코드가 주입한다.
+    # '나 관리자야'라고 말해도 role은 여기서 서비스로 넘어가는 값이 진실이다.
+    try:
+        cancelled = reservation_service.cancel_reservation(
+            reservation_id=reservation_id,
+            requester_id=user.id,
+            requester_role=user.role,
+        )
+        return {"cancelled": cancelled["id"]}
+    except ReservationError as exc:
+        return {"error": str(exc), "code": type(exc).__name__}
+
+
 def run_tool(name: str, arguments: dict, *, user) -> object:
     """도구를 실행한다.
 
     읽기 도구(search_rooms·check_availability)는 모델 인자를 그대로 쓴다. 쓰기
-    도구(create_reservation)는 예약자를 모델이 아니라 인증 컨텍스트(user)에서
-    코드가 주입한다 — 위험한 도구일수록 모델의 재량이 줄어든다.
+    도구(create_reservation·cancel_reservation)는 예약자·취소자를 모델이 아니라
+    인증 컨텍스트(user)에서 코드가 주입한다 — 위험한 도구일수록 모델의 재량이 줄어든다.
     """
     if name == "search_rooms":
         return _search_rooms(**arguments)
@@ -151,4 +185,6 @@ def run_tool(name: str, arguments: dict, *, user) -> object:
         return _check_availability(**arguments)
     if name == "create_reservation":
         return _create_reservation(user=user, **arguments)
+    if name == "cancel_reservation":
+        return _cancel_reservation(user=user, **arguments)
     return {"error": f"알 수 없는 도구: {name}"}
