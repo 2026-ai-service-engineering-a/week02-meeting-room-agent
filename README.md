@@ -44,7 +44,7 @@ week02-meeting-room-agent (v0.1)
 ├── docker-compose.yml       # app + db 공통 정의
 ├── docker-compose.dev.yml   # 개발 오버라이드 (볼륨·--reload·db 포트)
 ├── Dockerfile               # uv 기반 의존성 설치
-├── .env.example             # GEMINI_API_KEY, MODEL, FALLBACK_MODELS, DB 접속 정보
+├── .env.example             # GEMINI/ANTHROPIC/OPENAI_API_KEY, MODEL, FALLBACK_MODELS, DB 접속 정보
 ├── pyproject.toml           # fastapi, litellm, psycopg, pytest 등 선언 완료
 ├── PROMPT.md                # 시연 지시 프롬프트가 누적될 자리
 └── README.md
@@ -61,9 +61,16 @@ week02-meeting-room-agent (v0.1)
 cp .env.example .env
 ```
 
-v0.1 예약 서비스는 **키 없이 전부 동작**합니다. `GEMINI_API_KEY`는 v1.0
-에이전트(`/reserve`)를 돌릴 때만 필요합니다
-([Google AI Studio](https://aistudio.google.com/apikey)에서 무료 발급).
+v0.1 예약 서비스는 **키 없이 전부 동작**합니다. LLM 프로바이더 키는 v1.0
+에이전트(`/reserve`)를 돌릴 때만 필요합니다. LiteLLM이 `MODEL` 문자열의
+접두사(`gemini/`·`anthropic/`·`openai/`)를 보고 알맞은 키로 호출합니다.
+
+- 기본 모델은 무료 티어가 있는 `gemini/gemini-2.5-flash`라 `GEMINI_API_KEY`
+  하나면 시작할 수 있습니다
+  ([Google AI Studio](https://aistudio.google.com/apikey)에서 무료 발급)
+- 3회전의 폴백 시연(`FALLBACK_MODELS`)까지 재현하려면
+  Claude(`ANTHROPIC_API_KEY`)와 OpenAI(`OPENAI_API_KEY`) 키도 `.env`에
+  넣습니다
 
 ### 2. docker compose로 실행
 
