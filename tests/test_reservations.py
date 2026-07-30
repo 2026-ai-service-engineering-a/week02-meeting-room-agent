@@ -205,10 +205,15 @@ def test_admin_can_cancel_others_reservation(client, new_user, admin_headers, fo
 def test_endpoints_require_login_including_reserve(client):
     assert client.get("/rooms").status_code == 401
     assert client.get("/reservations").status_code == 401
-    assert client.post("/reserve").status_code == 401  # 501보다 인증이 먼저
+    assert client.post("/reserve").status_code == 401  # 본문 검증(422)보다 인증이 먼저
 
 
-def test_reserve_is_not_implemented_yet(client, new_user):
+def test_reserve_requires_a_message(client, new_user):
+    """자연어 통로가 열렸습니다 — message 없이는 422 (더 이상 501이 아님).
+
+    실제 에이전트 호출(LLM)은 API 키·네트워크가 필요하므로 여기서 돌리지 않고,
+    엔드포인트가 연결되어 본문을 요구하는지까지만 확인합니다.
+    """
     user = new_user()
-    resp = client.post("/reserve", headers=user["headers"])
-    assert resp.status_code == 501  # 자연어 통로는 v1.0에서 열립니다
+    resp = client.post("/reserve", headers=user["headers"], json={})
+    assert resp.status_code == 422
