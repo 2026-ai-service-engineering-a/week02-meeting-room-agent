@@ -7,8 +7,10 @@
 1회전은 읽기 전용 도구 2종입니다. 예약 생성(2회전)·취소(3회전)가 뒤에 더해집니다.
 """
 
+import re
 from datetime import datetime
 
+from app.db import get_reporting_conn
 from app.services import reservations as reservation_service
 from app.services import rooms as room_service
 from app.services.reservations import ReservationError
@@ -190,12 +192,108 @@ def _list_reservations(*, user):
     return reservation_service.list_reservations(user_id=user.id, role=user.role)
 
 
+# ── v1.5: 관리자 전용 SQL 콘솔 (세 겹 방어) ────────────────────────────
+
+MAX_ROWS = 200
+STATEMENT_TIMEOUT_MS = 3000
+
+# 시스템 프롬프트에 넣어 모델이 조회 가능한 뷰·컬럼을 알게 한다 (관리자에게만 보임).
+REPORTING_SCHEMA_HINT = (
+    "run_sql_query로 조회할 수 있는 리포팅 뷰와 컬럼 (읽기 전용, 단일 SELECT):\n"
+    "- rpt_users(id, email, name, role, team_id)\n"
+    "- rpt_teams(id, name)\n"
+    "- rpt_rooms(id, name, capacity, equipment)\n"
+    "- rpt_reservations(id, room_id, user_id, starts_at, ends_at, purpose)\n"
+    "베이스 테이블·비밀번호·토큰은 보이지 않습니다."
+)
+
+SQL_TOOL_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "run_sql_query",
+        "description": (
+            "리포팅 뷰에 단일 SELECT 문을 실행해 임의 집계·탐색 질문에 답한다"
+            " (관리자 전용, 읽기 전용). 예약 건수·순위·기간 집계처럼 다른 도구로"
+            " 안 되는 통계 질문에만 쓴다."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "실행할 단일 SELECT 문 (리포팅 뷰만 참조)",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+# 데이터 변경·DDL·권한 명령 — 파싱 단계의 belt. 진짜 방어선은 읽기 전용 롤이다.
+_FORBIDDEN = re.compile(
+    r"\b(insert|update|delete|drop|alter|create|grant|revoke|truncate|copy|merge|call)\b",
+    re.IGNORECASE,
+)
+
+
+def _strip_sql_comments(sql: str) -> str:
+    sql = re.sub(r"--[^\n]*", " ", sql)  # 라인 주석
+    sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.S)  # 블록 주석
+    return sql
+
+
+def _is_single_select(sql: str) -> tuple[bool, str]:
+    """단일 SELECT 문인지 검사 — (통과, 사유). 실행 전에 거른다."""
+    body = _strip_sql_comments(sql).strip().rstrip(";").strip()
+    if not body:
+        return False, "빈 쿼리입니다"
+    if ";" in body:
+        return False, "세미콜론(다중 문)은 허용되지 않습니다 — 단일 SELECT만 됩니다"
+    lowered = body.lower()
+    if not (lowered.startswith("select") or lowered.startswith("with")):
+        return False, "SELECT(또는 WITH … SELECT) 문만 실행할 수 있습니다"
+    if _FORBIDDEN.search(body):
+        return False, "쓰기·DDL·권한 명령이 포함되어 거부되었습니다 (읽기 전용)"
+    return True, ""
+
+
+def _run_sql_query(*, user, query: str):
+    # (1) 관리자 게이트 — role은 인증 컨텍스트에서 온다. 비관리자는 여기서 끝.
+    if getattr(user, "role", None) != "admin":
+        return {"error": "이 도구는 관리자만 사용할 수 있습니다", "code": "PermissionDenied"}
+    # (2) SELECT 전용 파싱
+    ok, reason = _is_single_select(query)
+    if not ok:
+        return {"error": reason, "code": "NotSelectOnly"}
+    # (3) 읽기 전용 롤 + LIMIT·타임아웃. 실제 권한 경계는 reporter 롤(DB)이 강제한다.
+    wrapped = (
+        f"SELECT * FROM (\n{_strip_sql_comments(query).strip().rstrip(';')}\n)"
+        f" AS _q LIMIT {MAX_ROWS}"
+    )
+    try:
+        with get_reporting_conn() as conn:
+            conn.execute(f"SET statement_timeout = {STATEMENT_TIMEOUT_MS}")
+            rows = conn.execute(wrapped).fetchall()
+        return {"rows": rows, "row_count": len(rows), "truncated": len(rows) >= MAX_ROWS}
+    except Exception as exc:
+        # DB가 막은 것(권한·타임아웃·문법)도 예외가 아니라 결과로 돌려줘 모델이 고치게.
+        return {"error": str(exc), "code": "QueryError"}
+
+
+def schemas_for(user) -> list[dict]:
+    """사용자에게 노출할 도구 스키마 — SQL 콘솔은 관리자에게만 보인다."""
+    if getattr(user, "role", None) == "admin":
+        return [*TOOL_SCHEMAS, SQL_TOOL_SCHEMA]
+    return TOOL_SCHEMAS
+
+
 def run_tool(name: str, arguments: dict, *, user) -> object:
     """도구를 실행한다.
 
-    search_rooms·check_availability는 모델 인자를 그대로 쓴다. 나머지 셋은 사용자
-    소유·권한이 걸리므로, 예약자·취소자·조회 범위를 모델이 아니라 인증 컨텍스트(user)
-    에서 코드가 주입한다 — 위험하거나 사적인 도구일수록 모델의 재량이 줄어든다.
+    search_rooms·check_availability는 모델 인자를 그대로 쓴다. 나머지는 사용자
+    소유·권한이 걸리므로, 예약자·취소자·조회 범위·관리자 여부를 모델이 아니라 인증
+    컨텍스트(user)에서 코드가 주입·검사한다 — 위험하거나 사적인 도구일수록 모델의
+    재량이 줄어든다.
     """
     if name == "search_rooms":
         return _search_rooms(**arguments)
@@ -207,4 +305,6 @@ def run_tool(name: str, arguments: dict, *, user) -> object:
         return _cancel_reservation(user=user, **arguments)
     if name == "list_reservations":
         return _list_reservations(user=user)
+    if name == "run_sql_query":
+        return _run_sql_query(user=user, **arguments)
     return {"error": f"알 수 없는 도구: {name}"}
