@@ -42,12 +42,14 @@ def _system_prompt() -> str:
         "당신은 사내 회의실 예약을 돕는 어시스턴트입니다.\n"
         f"현재 시각은 {now} (Asia/Seoul)입니다. "
         "'오늘'·'내일'·'오후' 같은 표현은 이 시각을 기준으로 해석하세요.\n\n"
-        "쓸 수 있는 도구는 두 가지입니다:\n"
+        "쓸 수 있는 도구는 세 가지입니다:\n"
         "- search_rooms: 인원·설비 조건으로 회의실을 검색\n"
-        "- check_availability: 특정 회의실의 특정 시간대 빈 시간을 조회\n\n"
-        "지금은 읽기 전용 단계입니다. 방을 찾아 주고 비어 있는지 확인해 줄 수는 "
-        "있지만, 아직 예약을 확정하지는 못합니다. 사용자가 예약을 요청하면 후보와 "
-        "빈 시간을 안내한 뒤, 예약 확정 기능은 곧 추가된다고 정중히 알려 주세요.\n\n"
+        "- check_availability: 특정 회의실의 특정 시간대 빈 시간을 조회\n"
+        "- create_reservation: 회의실·시각·목적으로 예약을 확정\n\n"
+        "사용자가 예약을 요청하면 필요한 정보(방·시간·목적)를 확인하고 "
+        "create_reservation으로 확정하세요. 예약자는 시스템이 로그인한 본인으로 "
+        "자동 지정하니 누구 이름으로 할지 묻지 마세요. 겹침·인원 초과·없는 방 등으로 "
+        "거절되면 그 사유를 알리고 다른 시간이나 방을 제안하세요.\n\n"
         "답변은 한국어로 간결하게 하세요."
     )
 
@@ -117,7 +119,7 @@ def run_agent(
 
             for call in msg.tool_calls:
                 arguments = json.loads(call.function.arguments or "{}")
-                result = run_tool(call.function.name, arguments)
+                result = run_tool(call.function.name, arguments, user=user)
                 fresh.append(
                     {
                         "role": "tool",

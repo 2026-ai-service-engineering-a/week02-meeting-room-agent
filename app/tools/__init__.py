@@ -9,7 +9,9 @@
 
 from datetime import datetime
 
+from app.services import reservations as reservation_service
 from app.services import rooms as room_service
+from app.services.reservations import ReservationError
 
 # ── 모델에게 보이는 스키마 (function calling) ──────────────────────────
 
@@ -61,6 +63,39 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_reservation",
+            "description": (
+                "회의실을 예약한다. 겹침·인원 검사를 통과하면 확정하고, 아니면"
+                " 거절 사유를 돌려준다. (예약자는 시스템이 자동 지정한다)"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "room_id": {"type": "integer", "description": "예약할 회의실 id"},
+                    "starts_at": {
+                        "type": "string",
+                        "description": "시작 시각 (ISO 8601, 예: 2026-07-31T15:00:00)",
+                    },
+                    "ends_at": {
+                        "type": "string",
+                        "description": "종료 시각 (ISO 8601)",
+                    },
+                    "purpose": {"type": "string", "description": "회의 목적 (선택)"},
+                    "attendees": {
+                        "type": "integer",
+                        "description": (
+                            "예상 인원 — 수용 인원 초과 검사에만 쓰이고 저장되지"
+                            " 않는다 (선택)"
+                        ),
+                    },
+                },
+                "required": ["room_id", "starts_at", "ends_at"],
+            },
+        },
+    },
 ]
 
 
@@ -79,15 +114,41 @@ def _check_availability(room_id: int, start: str, end: str):
     )
 
 
-_DISPATCH = {
-    "search_rooms": _search_rooms,
-    "check_availability": _check_availability,
-}
+def _create_reservation(
+    *,
+    user,
+    room_id: int,
+    starts_at: str,
+    ends_at: str,
+    purpose: str = "",
+    attendees: int | None = None,
+):
+    # 예약자(user_id)는 모델이 아니라 인증 컨텍스트에서 온다 — 코드가 주입한다.
+    try:
+        return reservation_service.create_reservation(
+            room_id=room_id,
+            user_id=user.id,
+            starts_at=datetime.fromisoformat(starts_at),
+            ends_at=datetime.fromisoformat(ends_at),
+            purpose=purpose,
+            attendees=attendees,
+        )
+    except ReservationError as exc:
+        # 거절은 예외로 터뜨리지 않고 결과로 돌려준다 — 에이전트가 대안을 제시하도록.
+        return {"error": str(exc), "code": type(exc).__name__}
 
 
-def run_tool(name: str, arguments: dict) -> object:
-    """도구 이름과 인자로 서비스 함수를 부른다. 결과는 모델이 읽을 수 있는 값이어야 한다."""
-    func = _DISPATCH.get(name)
-    if func is None:
-        return {"error": f"알 수 없는 도구: {name}"}
-    return func(**arguments)
+def run_tool(name: str, arguments: dict, *, user) -> object:
+    """도구를 실행한다.
+
+    읽기 도구(search_rooms·check_availability)는 모델 인자를 그대로 쓴다. 쓰기
+    도구(create_reservation)는 예약자를 모델이 아니라 인증 컨텍스트(user)에서
+    코드가 주입한다 — 위험한 도구일수록 모델의 재량이 줄어든다.
+    """
+    if name == "search_rooms":
+        return _search_rooms(**arguments)
+    if name == "check_availability":
+        return _check_availability(**arguments)
+    if name == "create_reservation":
+        return _create_reservation(user=user, **arguments)
+    return {"error": f"알 수 없는 도구: {name}"}
