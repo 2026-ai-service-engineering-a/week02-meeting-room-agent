@@ -20,7 +20,7 @@ from psycopg.types.json import Json
 from app.auth.deps import CurrentUser
 from app.db import get_conn
 from app.llm import complete
-from app.tools import TOOL_SCHEMAS, run_tool
+from app.tools import REPORTING_SCHEMA_HINT, run_tool, schemas_for
 
 LOCAL_TZ = ZoneInfo("Asia/Seoul")
 
@@ -37,9 +37,9 @@ class ConversationError(Exception):
         self.status = status
 
 
-def _system_prompt() -> str:
+def _system_prompt(user) -> str:
     now = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d %H:%M")
-    return (
+    base = (
         "당신은 사내 회의실 예약을 돕는 어시스턴트입니다.\n"
         f"현재 시각은 {now} (Asia/Seoul)입니다. "
         "'오늘'·'내일'·'오후' 같은 표현은 이 시각을 기준으로 해석하세요.\n\n"
@@ -62,6 +62,14 @@ def _system_prompt() -> str:
         "없으면 시스템이 막으니, 무리하게 우회하지 말고 사실대로 안내하세요.\n\n"
         "답변은 한국어로 간결하게 하세요."
     )
+    if getattr(user, "role", None) == "admin":
+        base += (
+            "\n\n[관리자 전용] run_sql_query 도구로 리포팅 뷰에 단일 SELECT를 실행해 "
+            "예약 건수·순위·기간 집계 같은 임의 통계 질문에 답할 수 있습니다. 도구 5종으로 "
+            "안 되는 집계·탐색 질문에만 쓰고, 쓰기나 민감 정보 요청은 시스템이 막습니다.\n"
+            + REPORTING_SCHEMA_HINT
+        )
+    return base
 
 
 def _load_or_create(conn, conversation_id: int | None, user: CurrentUser):
@@ -117,8 +125,8 @@ def run_agent(
         reply = ""
         for _ in range(MAX_STEPS):
             response = complete(
-                [{"role": "system", "content": _system_prompt()}, *history, *fresh],
-                tools=TOOL_SCHEMAS,
+                [{"role": "system", "content": _system_prompt(user)}, *history, *fresh],
+                tools=schemas_for(user),
             )
             msg = response.choices[0].message
             fresh.append(_assistant_dict(msg))

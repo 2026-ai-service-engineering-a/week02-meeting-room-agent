@@ -96,3 +96,28 @@ INSERT INTO reservations (room_id, user_id, starts_at, ends_at, purpose) VALUES
     (1, 2, (CURRENT_DATE + 1) + time '16:30', (CURRENT_DATE + 1) + time '18:00', '채용 인터뷰'),
     (2, 3, (CURRENT_DATE + 1) + time '10:00', (CURRENT_DATE + 1) + time '11:00', '스프린트 플래닝'),
     (3, 1, (CURRENT_DATE + 2) + time '09:00', (CURRENT_DATE + 2) + time '12:00', '전사 타운홀');
+
+-- ── v1.5: 관리자 전용 SQL 콘솔 (feature/sql-console) ──────────────────
+-- 자연어 → SQL 조회 도구는 이 리소스만 씁니다. 세 겹 방어의 DB 절반이 여기 있습니다.
+
+-- (1) 분석·개발용 전용 관리자 계정 — 비밀번호는 다른 시드와 같은 'demo1234'.
+--     SQL 콘솔 도구는 role='admin' 에게만 열립니다.
+INSERT INTO users (email, name, password_hash, role, team_id) VALUES
+    ('analyst@example.com', '데이터분석', 'pbkdf2_sha256$210000$588c29d01e3f330606985731d0a029ab$8f16c21f62aa216e84dcfdaa857727cb6251e62adafd8e8423a0b7c61122bf83', 'admin', 1);
+
+-- (2) 리포팅 뷰 — password_hash·토큰을 애초에 뺀다. SQL 콘솔은 이 뷰만 본다.
+CREATE VIEW rpt_users AS
+    SELECT id, email, name, role, team_id FROM users;
+CREATE VIEW rpt_teams AS
+    SELECT id, name FROM teams;
+CREATE VIEW rpt_rooms AS
+    SELECT id, name, capacity, equipment FROM rooms;
+CREATE VIEW rpt_reservations AS
+    SELECT id, room_id, user_id, starts_at, ends_at, purpose FROM reservations;
+
+-- (3) 읽기 전용 롤 — SELECT 를 리포팅 뷰에만 준다.
+--     베이스 테이블(users·auth_tokens·messages …)과 쓰기는 롤에 권한이 없어 DB가 거부.
+--     뷰는 소유자(postgres) 권한으로 베이스 테이블을 읽으므로, reporter 는 뷰 너머를 못 본다.
+CREATE ROLE reporter WITH LOGIN PASSWORD 'reporter';
+GRANT USAGE ON SCHEMA public TO reporter;
+GRANT SELECT ON rpt_users, rpt_teams, rpt_rooms, rpt_reservations TO reporter;
